@@ -1,0 +1,48 @@
+name: Deploy Prometheus & Grafana to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Docker Containers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Configurar clave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Conectarse a EC2 y desplegar contenedores
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            echo "🚀 Iniciando despliegue..."
+
+            docker network create monitoring || true
+
+            echo "🛑 Deteniendo contenedores anteriores"
+            docker stop prometheus || true && docker rm prometheus || true
+            docker stop grafana || true && docker rm grafana || true
+
+            echo "📦 Desplegando Prometheus"
+            docker run -d \
+              --name prometheus \
+              --network monitoring \
+              -p 9090:9090 \
+              prom/prometheus
+
+            echo "📦 Desplegando Grafana"
+            docker run -d \
+              --name grafana \
+              --network monitoring \
+              -p 3000:3000 \
+              grafana/grafana
+          EOF
